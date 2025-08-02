@@ -1,0 +1,85 @@
+MODEL:
+  TYPE: swin
+  NAME: swin_tiny_patch4_window4_128_groundwater
+  DROP_PATH_RATE: 0.1
+  SWIN:
+    EMBED_DIM: 96
+    DEPTHS: [ 2, 2, 6, 2 ]
+    NUM_HEADS: [ 3, 6, 12, 24 ]
+    WINDOW_SIZE: 4
+
+DATA:
+  # Dataset configuration for ground water prediction
+  DATASET: 'UndergroundWater'
+  DATA_PATH: '.'
+  
+  # Optimized for ground water data (128x128 with 6 input channels, resized from 100x100)
+  BATCH_SIZE: 8
+  IMG_SIZE: 128
+  IN_CHANS: 6
+  INTERPOLATION: bicubic
+  ZIP_MODE: False
+  CACHE_MODE: part
+  PIN_MEMORY: True
+  NUM_WORKERS: 0  # Set to 0 for debugging
+
+TRAIN:
+  # Training configuration for ground water prediction
+  BASE_LR: 5e-4
+  WARMUP_LR: 1e-6
+  MIN_LR: 1e-5
+  
+  # Gradient accumulation for effective larger batch size
+  ACCUMULATION_STEPS: 2
+  
+  # Training schedule
+  EPOCHS: 1
+  WARMUP_EPOCHS: 5
+  WEIGHT_DECAY: 0.05
+  
+  # Gradient clipping
+  CLIP_GRAD: 5.0
+  
+  # Optimizer settings
+  OPTIMIZER:
+    NAME: adamw
+    EPS: 1e-8
+    BETAS: [0.9, 0.999]
+  
+  # Learning rate scheduler
+  LR_SCHEDULER:
+    NAME: cosine
+    
+  # Auto resume from latest checkpoint
+  AUTO_RESUME: True
+
+# Model output configuration
+MODEL:
+  OUT_CHANS: 1  # Single channel output for head prediction
+  RESUME: ''
+  
+# Disable data augmentation for regression task
+AUG:
+  COLOR_JITTER: null
+  AUTO_AUGMENT: null
+  REPROB: 0.0
+  REMODE: pixel
+  RECOUNT: 0
+  MIXUP: 0.0
+  CUTMIX: 0.0
+  CUTMIX_MINMAX: null
+  MIXUP_PROB: 0.0
+  MIXUP_SWITCH_PROB: 0.0
+  MIXUP_MODE: batch
+
+# System settings
+PRINT_FREQ: 10
+SAVE_FREQ: 5
+SEED: 0
+OUTPUT: './output'
+TAG: 'groundwater'
+EVAL_MODE: False
+THROUGHPUT_MODE: False
+
+# Mixed precision training
+AMP_OPT_LEVEL: 'O1'
