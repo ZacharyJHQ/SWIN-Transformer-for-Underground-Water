@@ -13,7 +13,7 @@ from torchvision import datasets, transforms
 from .samplers import SubsetRandomSampler
 from PIL import Image
 import io
-from radom_ground_env import RandomGroundEnv
+from random_ground_env_v2 import RandomGroundEnv
 
 def custom_collate_fn(batch):
     """Custom collate function to handle None values in batch"""
@@ -87,7 +87,7 @@ def build_loader(config, dataset_type='train'):
 def build_dataset(config):
     if config.DATA.DATASET == 'UndergroundWater':
         # Load pickle data
-        pickle_path = os.path.join(config.DATA.DATA_PATH, 'mock_data-1752037814.pkl')
+        pickle_path = os.path.join(config.DATA.DATA_PATH, 'mock_data-1754291967.pkl')
         if not os.path.exists(pickle_path):
             raise FileNotFoundError(f"Pickle file not found: {pickle_path}")
         

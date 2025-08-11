@@ -1,0 +1,70 @@
+MODEL:
+  TYPE: swin
+  NAME: swin_tiny_patch4_window4_128_groundwater_gw_style
+  DROP_PATH_RATE: 0.1
+  SWIN:
+    EMBED_DIM: 96
+    DEPTHS: [ 2, 2, 6, 2 ]
+    NUM_HEADS: [ 3, 6, 12, 24 ]
+    WINDOW_SIZE: 4
+    IN_CHANS: 6
+  OUT_CHANS: 1  # Single channel output for groundwater head prediction
+  RESUME: ''
+
+DATA:
+  DATASET: 'UndergroundWater'
+  DATA_PATH: '.'
+  BATCH_SIZE: 8
+  IMG_SIZE: 128
+  IN_CHANS: 6
+  INTERPOLATION: bicubic
+  ZIP_MODE: False
+  CACHE_MODE: part
+  PIN_MEMORY: True
+  NUM_WORKERS: 0
+
+TRAIN:
+  BASE_LR: 1e-4
+  WARMUP_LR: 1e-6
+  MIN_LR: 5e-6
+  ACCUMULATION_STEPS: 2
+  EPOCHS: 100
+  WARMUP_EPOCHS: 5
+  WEIGHT_DECAY: 0.05
+  CLIP_GRAD: 1.0
+  
+  OPTIMIZER:
+    NAME: adamw
+    EPS: 1e-8
+    BETAS: [0.9, 0.999]
+  
+  LR_SCHEDULER:
+    NAME: cosine
+    
+  AUTO_RESUME: False
+
+# Disable data augmentation for regression task
+AUG:
+  COLOR_JITTER: null
+  AUTO_AUGMENT: null
+  REPROB: 0.0
+  REMODE: pixel
+  RECOUNT: 0
+  MIXUP: 0.0
+  CUTMIX: 0.0
+  CUTMIX_MINMAX: null
+  MIXUP_PROB: 0.0
+  MIXUP_SWITCH_PROB: 0.0
+  MIXUP_MODE: batch
+
+# System settings
+PRINT_FREQ: 10
+SAVE_FREQ: 5
+SEED: 0
+OUTPUT: 'output'
+TAG: 'groundwater_style_head'
+EVAL_MODE: False
+THROUGHPUT_MODE: False
+
+# Mixed precision training
+AMP_OPT_LEVEL: 'O1'

@@ -30,6 +30,35 @@ except ImportError:
     amp = None
 
 
+def get_output_head_mode(config):
+    """
+    从配置中获取输出头模式
+    支持多种配置格式
+    """
+    # 方法1: 检查 MODEL.OUTPUT_HEAD.MODE
+    if hasattr(config.MODEL, 'OUTPUT_HEAD') and hasattr(config.MODEL.OUTPUT_HEAD, 'MODE'):
+        return config.MODEL.OUTPUT_HEAD.MODE
+    
+    # 方法2: 从TAG中推断
+    tag = getattr(config, 'TAG', '').lower()
+    if 'adaptive' in tag:
+        return 'reorganization'
+    elif 'pangu' in tag or 'hybrid' in tag:
+        return 'hybrid'
+    elif 'transpose' in tag:
+        return 'transpose'
+    
+    # 方法3: 从模型名称中推断
+    model_name = getattr(config.MODEL, 'NAME', '').lower()
+    if 'adaptive' in model_name:
+        return 'reorganization'
+    elif 'pangu' in model_name or 'hybrid' in model_name:
+        return 'hybrid'
+    
+    # 默认返回转置卷积
+    return 'transpose'
+
+
 def parse_option():
     parser = argparse.ArgumentParser('Swin Transformer training and evaluation script', add_help=False)
     parser.add_argument('--cfg', type=str, required=True, metavar="FILE", help='path to config file', )
@@ -323,7 +352,14 @@ if __name__ == '__main__':
     config.TRAIN.BASE_LR = linear_scaled_lr
     config.TRAIN.WARMUP_LR = linear_scaled_warmup_lr
     config.TRAIN.MIN_LR = linear_scaled_min_lr
-    config.OUTPUT = os.path.join(config.OUTPUT, config.MODEL.NAME, config.TAG)
+    
+    # 生成基于输出头类型和时间戳的输出路径
+    output_head_mode = get_output_head_mode(config)
+    current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_folder_name = f"{output_head_mode}_{current_time}"
+    
+    # 设置输出路径为根目录下的output文件夹
+    config.OUTPUT = os.path.join("output", output_folder_name)
     config.freeze()
 
     os.makedirs(config.OUTPUT, exist_ok=True)

@@ -70,6 +70,10 @@ _C.MODEL.SWIN.QK_SCALE = None
 _C.MODEL.SWIN.APE = False
 _C.MODEL.SWIN.PATCH_NORM = True
 
+# Output Head configuration
+_C.MODEL.OUTPUT_HEAD = CN()
+_C.MODEL.OUTPUT_HEAD.MODE = 'hybrid'  # Options: 'reorganization', 'hybrid', 'transpose'
+
 # -----------------------------------------------------------------------------
 # Training settings
 # -----------------------------------------------------------------------------
@@ -169,7 +173,7 @@ _C.THROUGHPUT_MODE = False
 
 def _update_config_from_file(config, cfg_file):
     config.defrost()
-    with open(cfg_file, 'r') as f:
+    with open(cfg_file, 'r', encoding='utf-8') as f:
         yaml_cfg = yaml.load(f, Loader=yaml.FullLoader)
 
     for cfg in yaml_cfg.setdefault('BASE', ['']):
