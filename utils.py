@@ -44,17 +44,39 @@ def load_checkpoint(config, model, optimizer, lr_scheduler, logger):
     msg = model.load_state_dict(checkpoint['model'], strict=False)
     logger.info(msg)
     min_mae = float('inf')
-    if not config.EVAL_MODE and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+    
+    # 检查是否有不匹配的键，如果有则跳过优化器和调度器的加载
+    has_missing_keys = len(msg.missing_keys) > 0
+    has_unexpected_keys = len(msg.unexpected_keys) > 0
+    
+    if has_missing_keys or has_unexpected_keys:
+        logger.warning("Model structure has changed, skipping optimizer and scheduler loading")
+        logger.warning(f"Missing keys: {msg.missing_keys}")
+        logger.warning(f"Unexpected keys: {msg.unexpected_keys}")
+        # 重置开始epoch为0，从头开始训练
         config.defrost()
-        config.TRAIN.START_EPOCH = checkpoint['epoch'] + 1
+        config.TRAIN.START_EPOCH = 0
         config.freeze()
-        if 'amp' in checkpoint and config.AMP_OPT_LEVEL != "O0" and checkpoint['config'].AMP_OPT_LEVEL != "O0" and amp is not None:
-            amp.load_state_dict(checkpoint['amp'])
-        logger.info(f"=> loaded successfully '{config.MODEL.RESUME}' (epoch {checkpoint['epoch']})")
-        if 'min_mae' in checkpoint:
-            min_mae = checkpoint['min_mae']
+    elif not config.EVAL_MODE and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
+        try:
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        except Exception as e:
+            logger.warning(f"Failed to load optimizer/scheduler state: {e}")
+            logger.warning("Continuing with fresh optimizer and scheduler")
+            config.defrost()
+            config.TRAIN.START_EPOCH = 0
+            config.freeze()
+            config.defrost()
+            config.TRAIN.START_EPOCH = checkpoint['epoch'] + 1
+            config.freeze()
+            if 'amp' in checkpoint and config.AMP_OPT_LEVEL != "O0" and checkpoint['config'].AMP_OPT_LEVEL != "O0" and amp is not None:
+                amp.load_state_dict(checkpoint['amp'])
+            logger.info(f"=> loaded successfully '{config.MODEL.RESUME}' (epoch {checkpoint['epoch']})")
+            if 'min_mae' in checkpoint:
+                min_mae = checkpoint['min_mae']
+        else:
+            logger.info("=> loaded model weights only, starting fresh training")
 
     del checkpoint
     torch.cuda.empty_cache()
