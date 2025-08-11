@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
+import torch.nn.functional as F
 
 
 class Mlp(nn.Module):
@@ -169,7 +170,6 @@ class WindowAttention(nn.Module):
         # x = self.proj(x)
         flops += N * self.dim * self.dim
         return flops
-
 
 class SwinTransformerBlock(nn.Module):
     r""" Swin Transformer Block.
@@ -543,7 +543,7 @@ class SwinTransformer(nn.Module):
                  window_size=7, mlp_ratio=4., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, **kwargs):#Here we can modify the chans
+                 use_checkpoint=False, **kwargs):
         super().__init__()
 
         self.num_layers = len(depths)
@@ -621,8 +621,8 @@ class SwinTransformer(nn.Module):
             self.decoder_layers.append(layer)
 
         self.norm = norm_layer(self.embed_dim)
-        self.final_conv = nn.Conv2d(embed_dim, out_chans, kernel_size=1)
-        self.sigmoid = nn.Sigmoid()
+        
+        self.output_head = AdaptiveOutputHead(embed_dim, out_chans)
 
         self.apply(self._init_weights)
 
@@ -638,6 +638,9 @@ class SwinTransformer(nn.Module):
             trunc_normal_(m.weight, std=.02)
             if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.BatchNorm2d):
+            nn.init.constant_(m.weight, 1.0)
+            nn.init.constant_(m.bias, 0)
     @torch.jit.ignore
     def no_weight_decay(self):
         return {'absolute_pos_embed'}
@@ -672,13 +675,11 @@ class SwinTransformer(nn.Module):
     def forward(self, x):
         input_size = x.shape[2:]  # Save input size (H, W)
         x = self.forward_features(x)
-        x = self.final_conv(x)
+        x = self.output_head(x)
         
-        # Upsample to match input size if needed
         if x.shape[2:] != input_size:
-            x = torch.nn.functional.interpolate(x, size=input_size, mode='bilinear', align_corners=False)
+            x = F.interpolate(x, size=input_size, mode='bilinear', align_corners=False)
         
-        x = self.sigmoid(x)
         return x
 
     def flops(self):
@@ -689,5 +690,62 @@ class SwinTransformer(nn.Module):
         for layer in self.decoder_layers:
             flops += layer.flops()
         flops += self.patches_resolution[0] * self.patches_resolution[1] * self.embed_dim
-        flops += self.patches_resolution[0] * self.patches_resolution[1] * self.embed_dim * self.out_chans
+        
+        # 计算输出头的FLOPs
+        H, W = self.patches_resolution
+        # Conv1: embed_dim -> embed_dim//2, 3x3
+        flops += H * W * self.embed_dim * (self.embed_dim // 2) * 9
+        # Conv2: embed_dim//2 -> embed_dim//4, 3x3  
+        flops += H * W * (self.embed_dim // 2) * (self.embed_dim // 4) * 9
+        # ConvTranspose1: embed_dim//4 -> embed_dim//8, 4x4, stride=2 (32x32 -> 64x64)
+        flops += (H * 2) * (W * 2) * (self.embed_dim // 4) * (self.embed_dim // 8) * 16
+        # ConvTranspose2: embed_dim//8 -> out_chans, 4x4, stride=2 (64x64 -> 128x128)
+        flops += (H * 4) * (W * 4) * (self.embed_dim // 8) * 1 * 16  # out_chans = 1
+        
         return flops
+
+
+class AdaptiveOutputHead(nn.Module):
+    
+    def __init__(self, embed_dim, out_chans):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.out_chans = out_chans
+        
+        self.upsample = nn.Upsample(
+            scale_factor=4, 
+            mode='bilinear', 
+            align_corners=False
+        )
+        
+        self.predict_nn = nn.Sequential(
+            nn.Linear(self.embed_dim, 256, bias=True),
+            nn.SiLU(),
+            nn.Linear(256, 128, bias=True),
+            nn.SiLU(),
+            nn.Linear(128, self.out_chans, bias=True)
+        )
+    
+    def forward(self, x):
+        
+        B, C, H, W = x.shape  # 输入: [B, 96, 32, 32]
+        
+        # [B, C, H, W] → [B, H, W, C] → [B, H*W, C]
+        x_seq = x.permute(0, 2, 3, 1).contiguous()  # [B, 32, 32, 96]
+        x_seq = x_seq.view(B, H*W, C)                # [B, 1024, 96]
+        
+        x_spatial = x_seq.view(B, H, W, C).permute(0, 3, 1, 2)  # [B, 96, 32, 32]
+        
+        x_upsampled = self.upsample(x_spatial)       # [B, 96, 128, 128]
+        
+        _, _, H_up, W_up = x_upsampled.shape
+        x_seq_up = x_upsampled.permute(0, 2, 3, 1)   # [B, 128, 128, 96]
+        x_seq_up = x_seq_up.view(B, H_up*W_up, C)    # [B, 16384, 96]
+
+        output_seq = self.predict_nn(x_seq_up)       # [B, 16384, out_chans]
+        output = output_seq.view(B, H_up, W_up, self.out_chans)  # [B, 128, 128, out_chans]
+        output = output.permute(0, 3, 1, 2)                      # [B, out_chans, 128, 128]
+        
+        return output
+
+
